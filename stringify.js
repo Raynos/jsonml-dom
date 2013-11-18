@@ -1,85 +1,111 @@
-var globalDocument = require("global/document")
-var DataSet = require("data-set")
+var encode = require("ent").encode
 
 var NormalizedWalker = require("./lib/normalized-walker.js")
 var getPrimitive = require("./lib/get-primitive.js")
 var isPrimitive = require("./lib/is-primitive.js")
 var unpackSelector = require("./lib/unpack-selector.js")
 
+var endingScriptTag = /<\/script>/g
+
+var isDoubleQuote = /"/g
+var isSingleQuote = /'/g
+var camelCase = /([a-z][A-Z])/g
 
 module.exports = JSONMLReducer({
-    initialize: function initialize(opts) {
-        opts.document = opts.document || globalDocument
-    },
     createPrimitive: function createPrimitive(opts, tree, primitive) {
-        return primitive.dom(opts, tree)
-    },
-    createElement: function createElementContext(opts, properties) {
-        var elem = opts.document.createElement(properties.tagName.toUpperCase())
-        return elem
+        return primitive.stringify(opts, tree)
     },
     createTextNode: function createTextNode(opts, content, primitive) {
-        var textNode = opts.document.createTextNode()
         if (primitive) {
-            primitive.renderTextContent(opts, textNode, content)
+            return primitive.stringifyTextContent(opts, content)
         } else {
-            textNode.value = content
+            return escapeHTMLTextContent(opts, content)
         }
-        return textNode
     },
-    appendToContext: function appendToContext(opts, elem) {
-        var context = opts.parent && opts.parent.context
+    createElement: function createElement(opts, properties) {
+        return { tagName: properties.tagName, attrs: [] }
+    },
+    finishElement: function finishElement(opts, properties) {
+        return "</" + properties.tagName + ">"
+    },
+    appendToContext: function (opts, context) {
+        var strings = (opts.parent && opts.parent.context) || []
 
-        if (elem && context) {
-            context.appendChild(elem)
+        // then its { tagName, attrs }
+        var str
+        if (typeof context !== "string") {
+            var attrString = context.attrs.join(" ").trim()
+            attrString = attrString === "" ? "" : " " + attrString
+            str = "<" + context.tagName + attrString + ">"
+        } else {
+            str = context
         }
 
-        return elem
+        strings.push(str)
+
+        return strings
     },
     propertyHandlers: {
-        "style": function renderStyle(opts, elem, value) {
-            Object.keys(value).forEach(function (key) {
-                var styleValue = value[key]
-
-                if (!elem.style) {
-                    elem.style = {}
-                }
-
-                if (isPrimitive(styleValue)) {
-                    getPrimitive(opts, styleValue)
-                        .renderStyle(opts, elem, styleValue, key)
-                } else {
-                    elem.style[key] = styleValue
-                }
+        "style": function stringifyStyle(opts, context, styles) {
+            var attr = ""
+            Object.keys(styles).forEach(function (key) {
+                var value = styles[key]
+                attr += hyphenate(key) + ": " + value + ";"
             })
+            
+            context.attrs.push("style=\"" + escapeHTMLAttributes(attr) + "\"")
         },
-        "dataset": function dataAttributes(opts, elem, dataset) {
-            var ds
-
+        "dataset": function stringifyDataSet(opts, context, dataset) {
+            var attrs = context.attrs
             Object.keys(dataset).forEach(function (key) {
                 var value = dataset[key]
-
-                if (!ds) {
-                    ds = DataSet(elem)
-                }
-
-                if (isPrimitive(value)) {
-                    getPrimitive(opts, value)
-                        .renderDataSet(opts, elem, value, key)
-                } else {
-                    ds[key] = value
-                }
+                attrs.push("data-" + hyphenate(key) + "=\"" +
+                    escapeHTMLAttributes(value) + "\"")
             })
         }
     },
-    handleProperty: function property(opts, elem, value, key, primitive) {
+    handleProperty: function property(opts, context, value, key, primitive) {
+        var attr
         if (primitive) {
-            primitive.renderProperty(opts, elem, value, key)
+            attr = primitive.stringifyProperty(opts, value, key)
+        } else if (value === true) {
+            attr = key
+        } else if (value === false) {
+            attr = ""
         } else {
-            elem[key] = value
+            attr = key + "=\"" + escapeHTMLAttributes(value) + "\""
         }
+
+        context.attrs.push(attr)
     }
 })
+
+
+function hyphenate(key) {
+    return key.replace(camelCase, function (group) {
+        return group[0] + "-" + group[1].toLowerCase()
+    })
+}
+
+function escapeHTMLAttributes(s) {
+    return String(s)
+        .replace(isDoubleQuote, "&quot;")
+        .replace(isSingleQuote, "&#39;")
+}
+
+
+function escapeHTMLTextContent(opts, string) {
+    var tagName = opts.parent ? opts.parent[1].tagName : ""
+    var escaped = String(string)
+
+    if (tagName !== "script" && tagName !== "style") {
+        escaped = encode(escaped)
+    } else if (tagName === "script") {
+        escaped = escaped.replace(endingScriptTag, "<\\\/script>")
+    }
+
+    return escaped
+}
 
 
 function JSONMLReducer(options) {
