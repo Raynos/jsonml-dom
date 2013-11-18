@@ -1,11 +1,9 @@
 var globalDocument = require("global/document")
 var DataSet = require("data-set")
 
-var NormalizedWalker = require("./lib/normalized-walker.js")
 var getPrimitive = require("./lib/get-primitive.js")
 var isPrimitive = require("./lib/is-primitive.js")
-var unpackSelector = require("./lib/unpack-selector.js")
-
+var JSONMLReducer = require("./lib/jsonml-reducer.js")
 
 module.exports = JSONMLReducer({
     initialize: function initialize(opts) {
@@ -15,7 +13,8 @@ module.exports = JSONMLReducer({
         return primitive.dom(opts, tree)
     },
     createElement: function createElementContext(opts, properties) {
-        var elem = opts.document.createElement(properties.tagName.toUpperCase())
+        var tagName = properties.tagName.toUpperCase()
+        var elem = opts.document.createElement(tagName)
         return elem
     },
     createTextNode: function createTextNode(opts, content, primitive) {
@@ -80,66 +79,3 @@ module.exports = JSONMLReducer({
         }
     }
 })
-
-
-function JSONMLReducer(options) {
-    var createPrimitive = options.createPrimitive
-    var createElement = options.createElement
-    var appendToContext = options.appendToContext
-    var createTextNode = options.createTextNode
-    var propertyHandlers = options.propertyHandlers
-    var handleProperty = options.handleProperty
-    var finishElement = options.finishElement
-
-    return NormalizedWalker({
-        onPlugin: function (opts, tree) {
-            var primitive = getPrimitive(opts, tree)
-            var context = createPrimitive(opts, tree, primitive)
-            return appendToContext(opts, context)
-        },
-        onNode: function (opts, selector, properties) {
-            var context
-            if (selector === "#text") {
-                var content = properties.value
-                var primitive = null
-                if (isPrimitive(content)) {
-                    primitive = getPrimitive(opts, content)
-                }
-
-                context = createTextNode(opts, content, primitive)
-                return appendToContext(opts, context)
-            }
-
-            unpackSelector(opts, selector, properties)
-
-            context = createElement(opts, properties)
-
-            Object.keys(properties).forEach(function (key) {
-                var value = properties[key]
-                var handler = handleProperty
-
-                if (propertyHandlers[key]) {
-                    handler = propertyHandlers[key]
-                    handler(opts, context, value, key)
-                } else {
-                    var primitive = null
-                    if (isPrimitive(value)) {
-                        primitive = getPrimitive(opts, value)
-                    }
-                    handleProperty(opts, context, value, key, primitive)
-                }
-            })
-
-            return appendToContext(opts, context)
-        },
-        onNodeAfter: function (opts, selector, properties) {
-            if (!finishElement) {
-                return
-            }
-
-            var context = finishElement(opts, properties)
-
-            return appendToContext(opts, context)
-        }
-    }, options.initialize)
-}

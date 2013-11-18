@@ -16,7 +16,12 @@
     "url": "https://github.com/Raynos/jsonml-dom/issues",
     "email": "raynos2@gmail.com"
   },
-  "dependencies": {},
+  "dependencies": {
+    "global": "~2.0.7",
+    "data-set": "~0.2.2",
+    "xtend": "~2.1.1",
+    "jsonml-walk": "git://github.com/Raynos/jsonml-walk"
+  },
   "devDependencies": {
     "tape": "~2.1.0"
   },
